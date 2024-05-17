@@ -15,6 +15,8 @@ export interface ClientOptions {
 
 export class Dragoneye {
   apiKey: string;
+  classification: ClassificationAPI.Classification =
+    new ClassificationAPI.Classification(this);
 
   constructor({ apiKey = readEnvVar("DRAGONEYE_API_KEY") }: ClientOptions) {
     if (apiKey === undefined) {
