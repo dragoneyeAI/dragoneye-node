@@ -1,6 +1,6 @@
 import * as ImageAPI from "./image";
 import * as ClassificationAPI from "./classification";
-import * as Common from "./common";
+import * as CommonAPI from "./common";
 
 function readEnvVar(key: string): string | undefined {
   return process.env[key];
@@ -32,5 +32,5 @@ export class Dragoneye {
 export namespace Dragoneye {
   export import Image = ImageAPI.Image;
   export import Classification = ClassificationAPI.Classification;
-  export import TaxonomyKingdom = Common.TaxonomyKingdom;
+  export import Common = CommonAPI;
 }

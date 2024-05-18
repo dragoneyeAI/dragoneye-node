@@ -3,11 +3,9 @@ import {
   NormalizedBbox,
   TaxonID,
   TaxonPrediction,
-  TaxonomyKingdom,
 } from "./common";
 import type { Image } from "./image";
 import type { Dragoneye } from "./index";
-import axios, { AxiosResponse } from "axios";
 
 export interface ClassificationTraitRootPrediction {
   id: TaxonID;
@@ -28,7 +26,7 @@ export interface ClassificationPredictImageResponse {
 
 export interface ClassificationPredictImageRequest {
   image: Image;
-  taxonomyKingdom: TaxonomyKingdom;
+  modelName: string;
 }
 
 export class Classification {
@@ -40,7 +38,7 @@ export class Classification {
 
   async predict({
     image,
-    taxonomyKingdom,
+    modelName,
   }: ClassificationPredictImageRequest): Promise<ClassificationPredictImageResponse> {
     const url = `${BASE_API_URL}/predict`;
 
@@ -56,19 +54,18 @@ export class Classification {
       );
     }
 
-    formData.append("taxonomy_kingdom", taxonomyKingdom.toString());
+    formData.append("model_name", modelName);
 
-    const config = {
-      headers: {
-        "Content-Type": "multipart/form-data",
-        Authorization: `Bearer ${this._client.apiKey}`,
-      },
-    };
-
-    let response: AxiosResponse<any, any>;
+    let response: Response;
 
     try {
-      response = await axios.post(url, formData, config);
+      response = await fetch(url, {
+        method: "POST",
+        body: formData,
+        headers: {
+          Authorization: `Bearer ${this._client.apiKey}`,
+        },
+      });
     } catch (error) {
       console.error(
         "Error during Dragoneye Classification prediction request:",
@@ -77,6 +74,6 @@ export class Classification {
       throw error;
     }
 
-    return response.data as ClassificationPredictImageResponse;
+    return (await response.json()) as ClassificationPredictImageResponse;
   }
 }
