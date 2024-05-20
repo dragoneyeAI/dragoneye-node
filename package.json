@@ -1,6 +1,6 @@
 {
   "name": "dragoneye-node",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "The official TypeScript library for the Dragoneye API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
