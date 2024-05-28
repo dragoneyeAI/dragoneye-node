@@ -17,7 +17,7 @@ export type TaxonPrediction = {
   name: string;
   displayName: string;
   score?: number;
-  children: TaxonPrediction;
+  children: TaxonPrediction[];
 };
 
 export const BASE_API_URL = "https://api.dragoneye.ai";
