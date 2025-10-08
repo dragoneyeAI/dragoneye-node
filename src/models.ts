@@ -38,7 +38,6 @@ export interface ClassificationPredictImageResponse {
 export interface ClassificationVideoObjectPrediction
   extends ClassificationObjectPrediction {
   frame_id: string;
-  frame_index: number;
   timestamp_microseconds: number;
 }
 
