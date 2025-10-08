@@ -1,4 +1,5 @@
 // classification.ts
+import { backOff } from "exponential-backoff";
 import {
   BASE_API_URL,
   FAILED_STATUS_PREFIX,
@@ -89,7 +90,7 @@ export class Classification {
       predictionTaskUuid as unknown as string
     )}`;
 
-    const resp = await fetch(url, {
+    const resp = await this._fetchWithRetry(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${this._client.apiKey}`,
@@ -118,6 +119,50 @@ export class Classification {
   }
 
   // ---------- INTERNALS ----------
+
+  private async _fetchWithRetry(
+    url: string,
+    options: RequestInit
+  ): Promise<Response> {
+    return backOff(
+      async () => {
+        const response = await fetch(url, options);
+
+        // Check if we should retry based on status code
+        if (response.status === 429) {
+          const error = new Error(
+            `HTTP ${response.status}: ${response.statusText}`
+          ) as Error & { response?: Response };
+          error.response = response;
+          throw error;
+        }
+
+        return response;
+      },
+      {
+        numOfAttempts: 8,
+        startingDelay: 500,
+        timeMultiple: 2,
+        delayFirstAttempt: false,
+        jitter: "full",
+        retry: (error: any, attemptNumber: number) => {
+          const shouldRetry = error.message?.startsWith("HTTP 429");
+
+          if (shouldRetry) {
+            console.log(
+              "Received 429 rate limit error, retrying ${attemptNumber}...",
+              error,
+              attemptNumber,
+              shouldRetry
+            );
+          }
+
+          // Retry on 429 rate limit errors
+          return shouldRetry;
+        },
+      }
+    );
+  }
 
   private _predictUnified(
     media: Image,
@@ -186,7 +231,7 @@ export class Classification {
 
     let resp: Response;
     try {
-      resp = await fetch(url, {
+      resp = await this._fetchWithRetry(url, {
         method: "POST",
         body: form,
         headers: {
@@ -225,7 +270,7 @@ export class Classification {
 
     let resp: Response;
     try {
-      resp = await fetch(signedUrl.presigned_post_request.url, {
+      resp = await this._fetchWithRetry(signedUrl.presigned_post_request.url, {
         method: "POST",
         body: form,
       });
@@ -257,7 +302,7 @@ export class Classification {
 
     let resp: Response;
     try {
-      resp = await fetch(url, {
+      resp = await this._fetchWithRetry(url, {
         method: "POST",
         body: form,
         headers: {
@@ -325,7 +370,7 @@ export class Classification {
 
     let resp: Response;
     try {
-      resp = await fetch(url, {
+      resp = await this._fetchWithRetry(url, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${this._client.apiKey}`,
