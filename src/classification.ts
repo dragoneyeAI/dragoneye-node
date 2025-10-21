@@ -55,6 +55,11 @@ function isTaskComplete(status: PredictionTaskState): boolean {
 export class Classification {
   protected _client: Dragoneye;
 
+  /**
+   * Creates a new Classification instance.
+   * @param client - The Dragoneye client instance to use for API calls.
+   * @internal
+   */
   constructor(private client: Dragoneye) {
     this._client = client;
   }
@@ -189,6 +194,7 @@ export class Classification {
     // 1) Begin task
     const beginResp = await this._beginPredictionTask(
       media.mimeType,
+      media.name,
       framesPerSecond
     );
 
@@ -219,12 +225,17 @@ export class Classification {
 
   private async _beginPredictionTask(
     mimeType: string,
+    name?: string,
     framesPerSecond?: number
   ): Promise<PredictionTaskBeginResponse> {
     const url = `${BASE_API_URL}/prediction-task/begin`;
 
     const form = new FormData();
     form.append("mimetype", mimeType);
+    if (name) {
+      form.append("file_name", name);
+    }
+
     if (typeof framesPerSecond === "number") {
       form.append("frames_per_second", String(framesPerSecond));
     }
