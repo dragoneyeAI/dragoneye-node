@@ -19,6 +19,12 @@ export class Dragoneye {
   classification: ClassificationAPI.Classification =
     new ClassificationAPI.Classification(this);
 
+  /**
+   * Creates a new Dragoneye client instance.
+   * @param options - Configuration options for the client.
+   * @param options.apiKey - The API key for authentication. Defaults to the DRAGONEYE_API_KEY environment variable.
+   * @throws {Error} If no API key is provided and DRAGONEYE_API_KEY environment variable is not set.
+   */
   constructor({ apiKey = readEnvVar("DRAGONEYE_API_KEY") }: ClientOptions) {
     if (apiKey === undefined) {
       throw new Error(

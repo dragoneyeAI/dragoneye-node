@@ -31,12 +31,19 @@ type ThisInstance<T> = T extends { prototype: infer P } ? P : never;
 export abstract class Media {
   abstract readonly kind: "image" | "video";
   readonly mimeType: ImageOrVideoMime;
+  readonly name?: string;
   private _blob: Blob;
 
-  // Make Media non-instantiable from the outside and only by subclasses.
-  protected constructor(blob: Blob, mimeType: ImageOrVideoMime) {
+  /**
+   * Make Media non-instantiable from the outside and only by subclasses.
+   * @param blob - The blob containing the media data.
+   * @param mimeType - The MIME type (image/* or video/*).
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs.
+   */
+  protected constructor(blob: Blob, mimeType: ImageOrVideoMime, name?: string) {
     this._blob = blob;
     this.mimeType = mimeType;
+    this.name = name;
   }
 
   /** Blob used for multipart upload. */
@@ -50,10 +57,16 @@ export abstract class Media {
   /**
    * Create from a Blob/File. If Blob has no type or it's not image/video,
    * you must supply a valid `mimeTypeOverride`.
+   * @param blob - The Blob or File object containing the media data.
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs.
+   * @param mimeTypeOverride - Optional MIME type override if the blob's type is missing or incorrect. Must be image/* or video/*.
+   * @returns An instance of Image or Video depending on the class called.
+   * @throws {IncorrectMediaTypeError} If the MIME type is not image/* or video/*, or doesn't match the class family.
    */
   static fromBlob<T extends typeof Media>(
     this: T,
     blob: Blob,
+    name?: string,
     mimeTypeOverride?: string
   ): ThisInstance<T> {
     const candidate = (mimeTypeOverride ?? blob.type ?? "").trim();
@@ -65,20 +78,37 @@ export abstract class Media {
       );
     }
     enforceFamilyOrThrow(this, candidate, "fromBlob");
-    return constructForThis(this, blob, candidate);
+    return constructForThis(this, blob, candidate, name);
   }
 
+  /**
+   * Create from a File object. The file name will be automatically extracted and used as the name if not provided.
+   * @param file - The File object containing the media data. The MIME type is read from file.type.
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs. Defaults to the file's name if not provided.
+   * @returns An instance of Image or Video depending on the class called.
+   * @throws {IncorrectMediaTypeError} If the file's MIME type is not image/* or video/*, or doesn't match the class family.
+   */
   static fromFile<T extends typeof Media>(
     this: T,
-    file: File
+    file: File,
+    name?: string
   ): ThisInstance<T> {
-    return this.fromBlob(file);
+    return this.fromBlob(file, name ?? file.name);
   }
 
+  /**
+   * Create from an ArrayBuffer with a specified MIME type.
+   * @param buf - The ArrayBuffer containing the media data.
+   * @param mimeType - The MIME type of the media. Must be image/* or video/*.
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs.
+   * @returns An instance of Image or Video depending on the class called.
+   * @throws {IncorrectMediaTypeError} If the MIME type is not image/* or video/*, or doesn't match the class family.
+   */
   static fromArrayBuffer<T extends typeof Media>(
     this: T,
     buf: ArrayBuffer,
-    mimeType: string
+    mimeType: string,
+    name?: string
   ): ThisInstance<T> {
     if (!isImageOrVideo(mimeType)) {
       throw new IncorrectMediaTypeError(
@@ -91,14 +121,24 @@ export abstract class Media {
     return constructForThis(
       this,
       new Blob([buf], { type: mimeType }),
-      mimeType
+      mimeType,
+      name
     );
   }
 
+  /**
+   * Create from a Uint8Array with a specified MIME type.
+   * @param u8 - The Uint8Array containing the media data.
+   * @param mimeType - The MIME type of the media. Must be image/* or video/*.
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs.
+   * @returns An instance of Image or Video depending on the class called.
+   * @throws {IncorrectMediaTypeError} If the MIME type is not image/* or video/*, or doesn't match the class family.
+   */
   static fromUint8Array<T extends typeof Media>(
     this: T,
     u8: Uint8Array,
-    mimeType: string
+    mimeType: string,
+    name?: string
   ): ThisInstance<T> {
     if (!isImageOrVideo(mimeType)) {
       throw new IncorrectMediaTypeError(
@@ -108,13 +148,28 @@ export abstract class Media {
       );
     }
     enforceFamilyOrThrow(this, mimeType, "fromUint8Array");
-    return constructForThis(this, new Blob([u8], { type: mimeType }), mimeType);
+    return constructForThis(
+      this,
+      new Blob([u8], { type: mimeType }),
+      mimeType,
+      name
+    );
   }
 
+  /**
+   * Create from a base64-encoded string with a specified MIME type.
+   * Works in both browser (using atob) and Node.js (using Buffer) environments.
+   * @param base64 - The base64-encoded string containing the media data.
+   * @param mimeType - The MIME type of the media. Must be image/* or video/*.
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs.
+   * @returns An instance of Image or Video depending on the class called.
+   * @throws {IncorrectMediaTypeError} If the MIME type is not image/* or video/*, or doesn't match the class family.
+   */
   static fromBase64<T extends typeof Media>(
     this: T,
     base64: string,
-    mimeType: string
+    mimeType: string,
+    name?: string
   ): ThisInstance<T> {
     if (!isImageOrVideo(mimeType)) {
       throw new IncorrectMediaTypeError(
@@ -135,16 +190,23 @@ export abstract class Media {
       // Node
       u8 = Uint8Array.from(Buffer.from(base64, "base64"));
     }
-    return this.fromUint8Array(u8, mimeType);
+    return this.fromUint8Array(u8, mimeType, name);
   }
 
   /**
-   * Fetches the resource and uses its Content-Type unless you pass an override.
+   * Fetches the resource from a URL and uses its Content-Type unless you pass an override.
    * If neither resolve to image/* or video/*, throws.
+   * @param url - The URL to fetch the media from.
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs. Defaults to the URL if not provided.
+   * @param mimeTypeOverride - Optional MIME type override. If not provided, uses the Content-Type header from the response.
+   * @returns A Promise that resolves to an instance of Image or Video depending on the class called.
+   * @throws {Error} If the fetch fails or the response is not ok.
+   * @throws {IncorrectMediaTypeError} If the resolved MIME type is not image/* or video/*, or doesn't match the class family.
    */
   static async fromUrl<T extends typeof Media>(
     this: T,
     url: string,
+    name?: string,
     mimeTypeOverride?: string
   ): Promise<ThisInstance<T>> {
     const resp = await fetch(url);
@@ -166,19 +228,25 @@ export abstract class Media {
       );
     }
     enforceFamilyOrThrow(this, resolved, "fromUrl");
-    return constructForThis(this, blob, resolved);
+    return constructForThis(this, blob, resolved, name ?? url);
   }
 
   /**
    * Node-only helper: read a local file path into a Media.
    * Attempts to guess MIME by extension if none is provided; throws if not image/video.
+   * @param filePath - The path to the file to read.
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs. If not provided, will use the file's basename.
+   * @param mimeType - Optional MIME type. If not provided, attempts to guess from the file extension.
+   * @returns A Promise that resolves to an instance of Image or Video depending on the class called.
+   * @throws {IncorrectMediaTypeError} If the MIME type cannot be determined or is not image/* or video/*, or doesn't match the class family.
    */
   static async fromFilePath<T extends typeof Media>(
     this: T,
     filePath: string,
+    name?: string,
     mimeType?: string
   ): Promise<ThisInstance<T>> {
-    const [{ readFile }, { extname }] = await Promise.all([
+    const [{ readFile }, { extname, basename }] = await Promise.all([
       import("node:fs/promises"),
       import("node:path"),
     ]);
@@ -196,7 +264,7 @@ export abstract class Media {
       );
     }
     enforceFamilyOrThrow(this, guessed, "fromFilePath");
-    return this.fromUint8Array(buf, guessed);
+    return this.fromUint8Array(buf, guessed, name ?? basename(filePath));
   }
 }
 
@@ -205,26 +273,38 @@ export abstract class Media {
 export class Image extends Media {
   readonly kind = "image";
 
-  /* @internal */ constructor(blob: Blob, mimeType: ImageMime) {
+  /**
+   * @internal
+   * @param blob - The blob containing the image data.
+   * @param mimeType - The image MIME type (image/*).
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs.
+   */
+  constructor(blob: Blob, mimeType: ImageMime, name?: string) {
     if (!isImageMime(mimeType)) {
       throw new IncorrectMediaTypeError(
         `Image requires image/* MIME; got "${mimeType}"`
       );
     }
-    super(blob, mimeType);
+    super(blob, mimeType, name);
   }
 }
 
 export class Video extends Media {
   readonly kind = "video";
 
-  /* @internal */ constructor(blob: Blob, mimeType: VideoMime) {
+  /**
+   * @internal
+   * @param blob - The blob containing the video data.
+   * @param mimeType - The video MIME type (video/*).
+   * @param name - Optional non-unique descriptive user-provided identifier that can be used for identifying or tracking responses to inputs.
+   */
+  constructor(blob: Blob, mimeType: VideoMime, name?: string) {
     if (!isVideoMime(mimeType)) {
       throw new IncorrectMediaTypeError(
         `Video requires video/* MIME; got "${mimeType}"`
       );
     }
-    super(blob, mimeType);
+    super(blob, mimeType, name);
   }
 }
 
@@ -233,11 +313,12 @@ export class Video extends Media {
 function constructForThis<T extends typeof Media>(
   ctor: T,
   blob: Blob,
-  mime: ImageOrVideoMime
+  mime: ImageOrVideoMime,
+  name?: string
 ): ThisInstance<T> {
   // We rely on the subclass constructor to re-validate the family.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new (ctor as any)(blob, mime);
+  return new (ctor as any)(blob, mime, name);
 }
 
 function enforceFamilyOrThrow<T extends typeof Media>(
