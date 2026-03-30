@@ -1,26 +1,9 @@
 // common.ts
 export type Brand<T, B extends string> = T & { readonly __brand: B };
 
-export type TaxonID = Brand<number, "TaxonID">;
-export function createTaxonID(taxonId: number): TaxonID {
-  return taxonId as TaxonID;
-}
-
 export type NormalizedBbox = [number, number, number, number];
 
-export enum TaxonType {
-  category = "category",
-  trait = "trait",
-}
-
-export type TaxonPrediction = {
-  id: TaxonID;
-  type: TaxonType;
-  name: string;
-  displayName: string;
-  score?: number;
-  children: TaxonPrediction[];
-};
+export type TimestampUs = Brand<number, "TimestampUs">;
 
 export type PredictionType = "image" | "video";
 

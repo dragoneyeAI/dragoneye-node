@@ -232,6 +232,8 @@ export class Classification {
 
     const form = new FormData();
     form.append("mimetype", mimeType);
+    form.append("response_version", "object");
+
     if (name) {
       form.append("file_name", name);
     }

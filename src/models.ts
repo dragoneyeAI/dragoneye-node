@@ -4,8 +4,6 @@ import type {
   PredictionTaskState,
   PredictionTaskUUID,
   PredictionType,
-  TaxonID,
-  TaxonPrediction,
 } from "./common";
 
 // ---- Status ----
@@ -15,22 +13,39 @@ export interface PredictionTaskStatusResponse {
   status: PredictionTaskState;
 }
 
-// ---- Image predictions ----
-export interface ClassificationTraitRootPrediction {
-  id: TaxonID;
+// ---- Classification prediction types ----
+export interface ClassificationAttributeOption {
+  option_id: number;
   name: string;
-  displayName: string;
-  taxons: TaxonPrediction[];
+  score: number;
+}
+
+export interface ClassificationAttributeResponse {
+  attribute_id: number;
+  name: string;
+  options: ClassificationAttributeOption[];
+}
+
+export interface ClassificationCategory {
+  id: number;
+  name: string;
+  score: number;
+}
+
+export interface ClassificationCategoryPrediction {
+  category: ClassificationCategory;
+  attributes: ClassificationAttributeResponse[];
 }
 
 export interface ClassificationObjectPrediction {
   normalizedBbox: NormalizedBbox;
-  category: TaxonPrediction;
-  traits: ClassificationTraitRootPrediction[];
+  predictions: ClassificationCategoryPrediction[];
 }
 
+// ---- Image predictions ----
 export interface ClassificationPredictImageResponse {
-  predictions: ClassificationObjectPrediction[];
+  object_predictions: ClassificationObjectPrediction[];
+  original_file_name?: string;
   prediction_task_uuid: PredictionTaskUUID;
 }
 
@@ -47,5 +62,6 @@ export interface ClassificationPredictVideoResponse {
     ClassificationVideoObjectPrediction[]
   >;
   frames_per_second: number;
+  original_file_name?: string;
   prediction_task_uuid: PredictionTaskUUID;
 }
