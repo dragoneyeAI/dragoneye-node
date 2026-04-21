@@ -22,6 +22,10 @@ import type {
   ClassificationPredictVideoResponse,
   PredictionTaskStatusResponse,
 } from "./models";
+import {
+  deserializeImagePredictions,
+  deserializeVideoPredictions,
+} from "./parquetDeserializer";
 
 // ---- Internal API shapes ----
 interface PresignedPostRequest {
@@ -232,8 +236,7 @@ export class Classification {
 
     const form = new FormData();
     form.append("mimetype", mimeType);
-    form.append("response_version", "object");
-
+    form.append("response_version", "parquet");
     if (name) {
       form.append("file_name", name);
     }
@@ -256,6 +259,11 @@ export class Classification {
         "Error beginning prediction task:",
         error
       );
+    }
+
+    if (resp.status === 400) {
+      const payload = (await resp.json()) as { detail?: string };
+      throw new PredictionTaskBeginError(payload.detail ?? "");
     }
 
     if (!resp.ok) {
@@ -377,9 +385,11 @@ export class Classification {
   ): Promise<
     ClassificationPredictImageResponse | ClassificationPredictVideoResponse
   > {
-    const url = `${BASE_API_URL}/prediction-task/results?predictionTaskUuid=${encodeURIComponent(
-      predictionTaskUuid as unknown as string
-    )}`;
+    const url =
+      `${BASE_API_URL}/prediction-task/results` +
+      `?predictionTaskUuid=${encodeURIComponent(
+        predictionTaskUuid as unknown as string
+      )}&response_version=parquet`;
 
     let resp: Response;
     try {
@@ -396,25 +406,46 @@ export class Classification {
       );
     }
 
+    if (resp.status === 400) {
+      const payload = (await resp.json()) as { detail?: string };
+      throw new PredictionTaskResultsUnavailableError(payload.detail ?? "");
+    }
+
     if (!resp.ok) {
       throw new PredictionTaskResultsUnavailableError(
         `Error getting prediction task results: ${resp.status} ${resp.statusText}`
       );
     }
 
-    const payload = await resp.json();
-
-    // Add the prediction task uuid to the response before returning
-    const augmented = {
-      ...payload,
-      prediction_task_uuid: predictionTaskUuid,
-    };
+    const parquetBytes = await resp.arrayBuffer();
+    const originalFileName = resp.headers.get("X-Original-File-Name") ?? null;
 
     switch (predictionType) {
-      case "image":
-        return augmented as ClassificationPredictImageResponse;
-      case "video":
-        return augmented as ClassificationPredictVideoResponse;
+      case "image": {
+        const object_predictions = await deserializeImagePredictions(parquetBytes);
+        return {
+          object_predictions,
+          prediction_task_uuid: predictionTaskUuid,
+          original_file_name: originalFileName,
+        } satisfies ClassificationPredictImageResponse;
+      }
+      case "video": {
+        const framesPerSecondHeader = resp.headers.get("X-Frames-Per-Second");
+        if (framesPerSecondHeader === null) {
+          throw new PredictionTaskResultsUnavailableError(
+            "Missing X-Frames-Per-Second header on video prediction response"
+          );
+        }
+        const timestamp_us_to_predictions = await deserializeVideoPredictions(
+          parquetBytes
+        );
+        return {
+          timestamp_us_to_predictions,
+          frames_per_second: Number(framesPerSecondHeader),
+          prediction_task_uuid: predictionTaskUuid,
+          original_file_name: originalFileName,
+        } satisfies ClassificationPredictVideoResponse;
+      }
     }
   }
 }

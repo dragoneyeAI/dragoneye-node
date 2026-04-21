@@ -3,8 +3,6 @@ export type Brand<T, B extends string> = T & { readonly __brand: B };
 
 export type NormalizedBbox = [number, number, number, number];
 
-export type TimestampUs = Brand<number, "TimestampUs">;
-
 export type PredictionType = "image" | "video";
 
 export type PredictionTaskState = Brand<string, "PredictionTaskState">;
