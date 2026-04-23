@@ -102,7 +102,7 @@ export class Classification {
     const resp = await this._fetchWithRetry(url, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${this._client.apiKey}`,
+        "X-API-Key": this._client.apiKey,
       },
     });
 
@@ -251,7 +251,7 @@ export class Classification {
         method: "POST",
         body: form,
         headers: {
-          Authorization: `Bearer ${this._client.apiKey}`,
+          "X-API-Key": this._client.apiKey,
         },
       });
     } catch (error) {
@@ -327,7 +327,7 @@ export class Classification {
         method: "POST",
         body: form,
         headers: {
-          Authorization: `Bearer ${this._client.apiKey}`,
+          "X-API-Key": this._client.apiKey,
         },
       });
     } catch (error) {
@@ -396,7 +396,7 @@ export class Classification {
       resp = await this._fetchWithRetry(url, {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${this._client.apiKey}`,
+          "X-API-Key": this._client.apiKey,
         },
       });
     } catch (error) {
