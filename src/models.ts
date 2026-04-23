@@ -13,7 +13,7 @@ export interface PredictionTaskStatusResponse {
   status: PredictionTaskState;
 }
 
-// ---- Classification prediction types ----
+// ---- Shared prediction types ----
 export interface ClassificationAttributeOption {
   option_id: number;
   name: string;
@@ -45,8 +45,8 @@ export interface ClassificationObjectPrediction {
 // ---- Image predictions ----
 export interface ClassificationPredictImageResponse {
   object_predictions: ClassificationObjectPrediction[];
-  original_file_name?: string;
   prediction_task_uuid: PredictionTaskUUID;
+  original_file_name?: string | null;
 }
 
 // ---- Video predictions ----
@@ -62,6 +62,6 @@ export interface ClassificationPredictVideoResponse {
     ClassificationVideoObjectPrediction[]
   >;
   frames_per_second: number;
-  original_file_name?: string;
   prediction_task_uuid: PredictionTaskUUID;
+  original_file_name?: string | null;
 }
