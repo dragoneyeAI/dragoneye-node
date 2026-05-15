@@ -1,10 +1,15 @@
 {
   "name": "dragoneye-node",
-  "version": "2.0.0",
-  "description": "The official TypeScript library for the Dragoneye API",
+  "version": "2.0.1",
+  "description": "Official Node.js / TypeScript SDK for the Dragoneye computer vision API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc"
   },
@@ -13,7 +18,13 @@
     "url": "git+https://github.com/dragoneyeAI/dragoneye-node.git"
   },
   "keywords": [
-    "dragoneye"
+    "dragoneye",
+    "computer-vision",
+    "image-classification",
+    "video-classification",
+    "machine-learning",
+    "ai",
+    "typescript"
   ],
   "author": "Dragoneye",
   "license": "MIT",
