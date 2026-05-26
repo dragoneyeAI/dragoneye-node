@@ -90,7 +90,7 @@ Below is an example of what a `ClassificationPredictVideoResponse` looks like fo
 {
   prediction_task_uuid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   original_file_name: "any-file-name",
-  frames_per_second: 1,
+  frames_per_second: 15,
   objects: [
     {
       // Stable tracking id for this entity within the response.
