@@ -89,10 +89,17 @@ export class Classification {
     return this._predictUnified(media, modelName, undefined, timeoutSeconds);
   }
 
+  /**
+   * Run a classification prediction on a video.
+   *
+   * @param framesPerSecond - How many frames per second to sample. Optional —
+   *   when omitted, the server applies its default sampling rate. See
+   *   https://docs.dragoneye.ai/docs/integrating/node-sdk#frame-rate for context.
+   */
   async predictVideo(
     media: Video,
     modelName: string,
-    framesPerSecond: number = 1,
+    framesPerSecond?: number,
     timeoutSeconds?: number
   ): Promise<ClassificationPredictVideoResponse> {
     return this._predictUnified(
