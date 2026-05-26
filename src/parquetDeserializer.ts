@@ -9,12 +9,12 @@
 import { parquetReadObjects } from "hyparquet";
 import { decompress as zstdDecompress } from "fzstd";
 import type {
-  ClassificationAttributeOption,
-  ClassificationAttributeResponse,
-  ClassificationCategory,
-  ClassificationCategoryPrediction,
-  ClassificationObjectPrediction,
-  ClassificationVideoObjectPrediction,
+  AttributePrediction,
+  BboxObservation,
+  CategoryPrediction,
+  DetectedObject,
+  ScoredTimestampRange,
+  TimestampRange,
 } from "./models.js";
 import type { NormalizedBbox } from "./common.js";
 
@@ -26,72 +26,87 @@ const compressors = {
     zstdDecompress(input, new Uint8Array(outputLength)),
 };
 
-// Row shape after parquet decoding. Matches the server-side schema:
-// image_id:           string
-// normalized_bbox:    Float64[4]
-// bbox_score:         number
-// predictions:        RawPrediction[]
-// timestamp_microseconds (video only): number | bigint
-// hyparquet decodes parquet INT64 columns as bigint, so id fields arrive as
-// number | bigint and must be narrowed before leaving this module.
-interface RawOption {
-  option_id: number | bigint;
-  name: string;
-  score: number;
+// hyparquet decodes parquet INT64 columns as bigint, so every id/microsecond
+// field arrives as `number | bigint` and must be narrowed before leaving this
+// module. Note: Number() on a BigInt beyond 2^53 loses precision — fine for
+// these IDs / µs timestamps in practice.
+function toNumber(value: unknown): number {
+  return typeof value === "bigint" ? Number(value) : (value as number);
 }
 
-interface RawAttribute {
-  attribute_id: number | bigint;
-  name: string;
-  options: RawOption[];
+// The parquet schema is already nested (one row per tracked object, with
+// nested structs + repeated fields), so the deserializer is a straight
+// structural map from parquet row → typed object: no flattening or grouping.
+// Optional/repeated fields default to empty arrays via `?? []` so a missing
+// list never throws. hyparquet returns `undefined` for null cells.
+
+function parseTimestampRange(value: unknown): TimestampRange {
+  const tr = (value ?? {}) as Record<string, unknown>;
+  return {
+    timestamp_start_us_inclusive: toNumber(tr["timestamp_start_us_inclusive"]),
+    timestamp_end_us_inclusive: toNumber(tr["timestamp_end_us_inclusive"]),
+  };
 }
 
-interface RawPrediction {
-  category_id: number | bigint;
-  name: string;
-  score: number;
-  attributes: RawAttribute[];
+function parseScoredTimestampRange(value: unknown): ScoredTimestampRange {
+  const tr = (value ?? {}) as Record<string, unknown>;
+  return {
+    timestamp_start_us_inclusive: toNumber(tr["timestamp_start_us_inclusive"]),
+    timestamp_end_us_inclusive: toNumber(tr["timestamp_end_us_inclusive"]),
+    score: tr["score"] as number,
+  };
 }
 
-// hyparquet returns `undefined` (not `null`) for null parquet cells, so every
-// nullable column must include `undefined` in its type — casts on these fields
-// would otherwise silently lie.
-interface RawRow {
-  image_id: string;
-  normalized_bbox: [number, number, number, number] | null | undefined;
-  bbox_score: number | null | undefined;
-  predictions: RawPrediction[] | null | undefined;
-  timestamp_microseconds?: number | bigint | null | undefined;
+function parseBboxObservation(value: Record<string, unknown>): BboxObservation {
+  return {
+    timestamp_microseconds: toNumber(value["timestamp_microseconds"]),
+    // Floats read straight from the parquet list — no per-element coercion.
+    normalized_bbox: value["normalized_bbox"] as NormalizedBbox,
+    bbox_score: value["bbox_score"] as number,
+  };
 }
 
-function toNumber(value: number | bigint): number {
-  return typeof value === "bigint" ? Number(value) : value;
+function parseAttributePrediction(
+  value: Record<string, unknown>
+): AttributePrediction {
+  const timestampRanges =
+    (value["timestamp_ranges"] as unknown[] | null | undefined) ?? [];
+  return {
+    attribute_id: toNumber(value["attribute_id"]),
+    attribute_name: value["attribute_name"] as string,
+    option_id: toNumber(value["option_id"]),
+    option_name: value["option_name"] as string,
+    timestamp_ranges: timestampRanges.map(parseScoredTimestampRange),
+  };
 }
 
-function predictionsToModels(
-  raw: RawPrediction[] | null | undefined
-): ClassificationCategoryPrediction[] {
-  if (!raw) return [];
-  return raw.map((pred) => ({
-    category: {
-      id: toNumber(pred.category_id),
-      name: pred.name,
-      score: pred.score,
-    } satisfies ClassificationCategory,
-    attributes: (pred.attributes ?? []).map(
-      (attr): ClassificationAttributeResponse => ({
-        attribute_id: toNumber(attr.attribute_id),
-        name: attr.name,
-        options: (attr.options ?? []).map(
-          (opt): ClassificationAttributeOption => ({
-            option_id: toNumber(opt.option_id),
-            name: opt.name,
-            score: opt.score,
-          })
-        ),
-      })
-    ),
-  }));
+function parseCategoryPrediction(
+  value: Record<string, unknown>
+): CategoryPrediction {
+  const attributes =
+    (value["attributes"] as Record<string, unknown>[] | null | undefined) ?? [];
+  return {
+    category_id: toNumber(value["category_id"]),
+    name: value["name"] as string,
+    score: value["score"] as number,
+    attributes: attributes.map(parseAttributePrediction),
+  };
+}
+
+function rowToDetectedObject(row: Record<string, unknown>): DetectedObject {
+  const bboxObservations =
+    (row["bbox_observations"] as Record<string, unknown>[] | null | undefined) ??
+    [];
+  const categories =
+    (row["categories"] as Record<string, unknown>[] | null | undefined) ?? [];
+  const timestampRanges =
+    (row["timestamp_ranges"] as unknown[] | null | undefined) ?? [];
+  return {
+    object_id: toNumber(row["object_id"]),
+    timestamp_ranges: timestampRanges.map(parseTimestampRange),
+    bbox_observations: bboxObservations.map(parseBboxObservation),
+    categories: categories.map(parseCategoryPrediction),
+  };
 }
 
 function toAsyncBuffer(buffer: ArrayBuffer) {
@@ -103,49 +118,16 @@ function toAsyncBuffer(buffer: ArrayBuffer) {
   };
 }
 
-async function readRows(parquetBytes: ArrayBuffer): Promise<RawRow[]> {
+// Reads the zstd-compressed, object-forward parquet body and maps each row to
+// one DetectedObject. The same format is used for both images and video; the
+// image vs. video distinction and scalar metadata (frames_per_second, etc.)
+// live in response headers, which the caller reads.
+export async function deserializeDetectedObjects(
+  parquetBytes: ArrayBuffer
+): Promise<DetectedObject[]> {
   const rows = await parquetReadObjects({
     file: toAsyncBuffer(parquetBytes),
     compressors,
   });
-  return rows as unknown as RawRow[];
-}
-
-export async function deserializeImagePredictions(
-  parquetBytes: ArrayBuffer
-): Promise<ClassificationObjectPrediction[]> {
-  const rows = await readRows(parquetBytes);
-  return rows
-    .filter((row) => row.normalized_bbox != null)
-    .map((row) => ({
-      normalizedBbox: row.normalized_bbox as NormalizedBbox,
-      predictions: predictionsToModels(row.predictions),
-    }));
-}
-
-export async function deserializeVideoPredictions(
-  parquetBytes: ArrayBuffer
-): Promise<Record<number, ClassificationVideoObjectPrediction[]>> {
-  const rows = await readRows(parquetBytes);
-  const result: Record<number, ClassificationVideoObjectPrediction[]> = {};
-
-  for (const row of rows) {
-    if (row.timestamp_microseconds == null) {
-      continue;
-    }
-    const ts = toNumber(row.timestamp_microseconds);
-    if (result[ts] === undefined) {
-      result[ts] = [];
-    }
-    if (row.normalized_bbox != null) {
-      result[ts].push({
-        normalizedBbox: row.normalized_bbox as NormalizedBbox,
-        predictions: predictionsToModels(row.predictions),
-        frame_id: row.image_id,
-        timestamp_microseconds: ts,
-      });
-    }
-  }
-
-  return result;
+  return (rows as Record<string, unknown>[]).map(rowToDetectedObject);
 }
