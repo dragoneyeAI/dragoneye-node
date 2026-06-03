@@ -150,7 +150,7 @@ export abstract class Media {
     enforceFamilyOrThrow(this, mimeType, "fromUint8Array");
     return constructForThis(
       this,
-      new Blob([u8], { type: mimeType }),
+      new Blob([u8 as BlobPart], { type: mimeType }),
       mimeType,
       name
     );
