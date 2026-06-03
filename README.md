@@ -26,6 +26,10 @@ Install the SDK using npm:
 npm install dragoneye-node
 ```
 
+> **Note — Module format (v3+)**: `dragoneye-node` is published as an **ES module** and requires **Node.js 18+**. Import it with `import { Dragoneye } from "dragoneye-node"`.
+>
+> If your project is CommonJS, load it with a dynamic import instead: `const { Dragoneye } = await import("dragoneye-node");`
+
 ## Quick Start
 
 > **Tip — Prerequisites**: Don't have an API key yet? See [Creating an Access Token](https://docs.dragoneye.ai/account-management/creating-access-token).
@@ -443,6 +447,23 @@ try {
   }
 }
 ```
+
+---
+
+## Cloudflare Workers & edge runtimes
+
+`dragoneye-node` runs in Cloudflare Workers and other runtimes that forbid runtime code generation. Result Parquet is decoded with pure-JavaScript libraries (`hyparquet` + `fzstd`) — no `eval`, no `new Function`, and no runtime WebAssembly compilation (workerd blocks all three).
+
+Two things to know when deploying to Workers:
+
+- **Enable `nodejs_compat`.** The SDK references `node:fs`/`node:path` (only inside the Node-only `fromFilePath` helper), so the bundle needs the flag to resolve:
+
+  ```jsonc
+  // wrangler.jsonc
+  { "compatibility_flags": ["nodejs_compat"] }
+  ```
+
+- **Load media without the filesystem.** `Image.fromFilePath` / `Video.fromFilePath` read from disk and are Node-only. In Workers, use `fromUrl`, `fromBlob`, `fromArrayBuffer`, `fromUint8Array`, or `fromBase64` instead.
 
 ---
 

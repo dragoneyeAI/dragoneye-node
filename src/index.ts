@@ -1,7 +1,7 @@
 // index.ts
-import * as ClassificationAPI from "./classification";
-import * as CommonAPI from "./common";
-import * as MediaAPI from "./media";
+import * as ClassificationAPI from "./classification.js";
+import * as CommonAPI from "./common.js";
+import * as MediaAPI from "./media.js";
 
 function readEnvVar(key: string): string | undefined {
   return process.env[key];

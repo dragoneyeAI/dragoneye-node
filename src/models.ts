@@ -4,7 +4,7 @@ import type {
   PredictionTaskState,
   PredictionTaskUUID,
   PredictionType,
-} from "./common";
+} from "./common.js";
 
 // ---- Status ----
 export interface PredictionTaskStatusResponse {

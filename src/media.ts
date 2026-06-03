@@ -1,5 +1,5 @@
 // media.ts
-import { IncorrectMediaTypeError } from "./exception";
+import { IncorrectMediaTypeError } from "./exception.js";
 
 type ImageMime = `image/${string}`;
 type VideoMime = `video/${string}`;
