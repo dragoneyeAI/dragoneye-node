@@ -8,24 +8,24 @@ import {
   PredictionTaskUUID,
   PredictionType,
   sleep,
-} from "./common";
+} from "./common.js";
 import {
   PredictionTaskBeginError,
   PredictionTaskError,
   PredictionTaskResultsUnavailableError,
   PredictionUploadError,
-} from "./exception";
-import type { Dragoneye } from "./index";
-import { Image, Video, type Media } from "./media";
+} from "./exception.js";
+import type { Dragoneye } from "./index.js";
+import { Image, Video, type Media } from "./media.js";
 import type {
   ClassificationPredictImageResponse,
   ClassificationPredictVideoResponse,
   PredictionTaskStatusResponse,
-} from "./models";
+} from "./models.js";
 import {
   deserializeImagePredictions,
   deserializeVideoPredictions,
-} from "./parquetDeserializer";
+} from "./parquetDeserializer.js";
 
 // ---- Internal API shapes ----
 interface PresignedPostRequest {

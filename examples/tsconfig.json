@@ -1,0 +1,12 @@
+{
+  // Type-checking config for the example scripts. The root tsconfig only includes
+  // ./src, so editors otherwise treat these files as loose and don't load
+  // @types/node — making globals like `process` appear undefined. This config is
+  // for the editor / `tsc --noEmit` only; it is not part of the published build.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": ["./**/*.ts"]
+}

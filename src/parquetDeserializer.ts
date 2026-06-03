@@ -1,4 +1,13 @@
 // parquetDeserializer.ts
+// Dragoneye writes prediction results as Zstd-compressed Parquet. hyparquet's
+// core reader only decodes UNCOMPRESSED and SNAPPY in pure JS, so we supply a
+// Zstd decompressor. We pull `fzstd` (pure JS) directly rather than
+// hyparquet-compressors, whose `compressors` export eagerly instantiates a
+// WebAssembly Snappy module — Cloudflare Workers (workerd) blocks runtime WASM
+// compilation, so importing it crashes the Worker at startup. fzstd has no WASM
+// and no eval, so this decode path runs in Workers and other no-codegen runtimes.
+import { parquetReadObjects } from "hyparquet";
+import { decompress as zstdDecompress } from "fzstd";
 import type {
   ClassificationAttributeOption,
   ClassificationAttributeResponse,
@@ -6,20 +15,16 @@ import type {
   ClassificationCategoryPrediction,
   ClassificationObjectPrediction,
   ClassificationVideoObjectPrediction,
-} from "./models";
-import type { NormalizedBbox } from "./common";
-import { dynamicImport, lazy } from "./esmImport";
+} from "./models.js";
+import type { NormalizedBbox } from "./common.js";
 
-const loadEsmDeps = lazy(async () => {
-  const [hyparquet, hyparquetCompressors] = await Promise.all([
-    dynamicImport<typeof import("hyparquet")>("hyparquet"),
-    dynamicImport<typeof import("hyparquet-compressors")>("hyparquet-compressors"),
-  ]);
-  return {
-    parquetReadObjects: hyparquet.parquetReadObjects,
-    compressors: hyparquetCompressors.compressors,
-  };
-});
+// hyparquet routes each column chunk's codec to compressors[codec] when present.
+// We pre-size the output buffer to the page's uncompressed length so decoding
+// works even for Zstd frames written without a content-size header.
+const compressors = {
+  ZSTD: (input: Uint8Array, outputLength: number): Uint8Array =>
+    zstdDecompress(input, new Uint8Array(outputLength)),
+};
 
 // Row shape after parquet decoding. Matches the server-side schema:
 // image_id:           string
@@ -99,7 +104,6 @@ function toAsyncBuffer(buffer: ArrayBuffer) {
 }
 
 async function readRows(parquetBytes: ArrayBuffer): Promise<RawRow[]> {
-  const { parquetReadObjects, compressors } = await loadEsmDeps();
   const rows = await parquetReadObjects({
     file: toAsyncBuffer(parquetBytes),
     compressors,

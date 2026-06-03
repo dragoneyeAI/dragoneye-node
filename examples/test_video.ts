@@ -1,8 +1,8 @@
 /**
- * npx dotenv-cli -e .env.local -- npx ts-node examples/test_video.ts
+ * npx dotenv-cli -e .env.local -- node --loader ts-node/esm examples/test_video.ts
  */
 
-import { Dragoneye } from "../src";
+import { Dragoneye } from "../src/index.js";
 
 const VIDEO_PATH = "/path/to/your/video.mp4";
 const MODEL_NAME = "recognize_anything/model_name";
