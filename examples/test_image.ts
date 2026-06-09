@@ -20,15 +20,13 @@ async function main() {
   console.log("\n--- Parsed predictions ---\n");
   for (const obj of result.objects) {
     console.log(`Object ${obj.object_id}:`);
-    for (const bbox of obj.bbox_observations) {
-      console.log(`  Bbox: ${JSON.stringify(bbox.normalized_bbox)} (score: ${bbox.bbox_score})`);
-    }
+    const bbox = obj.bbox_observation;
+    console.log(`  Bbox: ${JSON.stringify(bbox.normalized_bbox)} (score: ${bbox.bbox_score})`);
     for (const category of obj.categories) {
       console.log(`  Category: ${category.name} (score: ${category.score})`);
       for (const attr of category.attributes) {
-        const score = attr.timestamp_ranges[0]?.score;
         console.log(
-          `    Attribute: ${attr.attribute_name} = ${attr.option_name} (score: ${score})`
+          `    Attribute: ${attr.attribute_name} = ${attr.option_name} (score: ${attr.score})`
         );
       }
     }

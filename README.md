@@ -60,20 +60,17 @@ const videoResult = await dragoneyeClient.classification.predictVideo(
 );
 
 // Accessing image results
-// The server returns one tracked object per detection. Each object carries its
-// bbox observations over time and its categories; each category lists the
-// attributes that were predicted, with the chosen option for each.
+// The server returns one detected object per detection. Each object carries a
+// single bounding box and its categories; each category lists the attributes
+// that were predicted, with the chosen option and a score for each.
 for (const obj of imageResult.objects) {
-  for (const bbox of obj.bbox_observations) {
-    console.log("Bbox:", bbox.normalized_bbox, "(score:", bbox.bbox_score, ")");
-  }
+  const bbox = obj.bbox_observation;
+  console.log("Bbox:", bbox.normalized_bbox, "(score:", bbox.bbox_score, ")");
   for (const category of obj.categories) {
     console.log(`  Category: ${category.name} (score: ${category.score})`);
     for (const attr of category.attributes) {
-      // Each attribute holds scored timestamp ranges; for an image there's one.
-      const score = attr.timestamp_ranges[0]?.score;
       console.log(
-        `      ${attr.attribute_name}: ${attr.option_name} (score: ${score})`
+        `      ${attr.attribute_name}: ${attr.option_name} (score: ${attr.score})`
       );
     }
   }
@@ -82,9 +79,56 @@ for (const obj of imageResult.objects) {
 
 > **Note — Model names**: Model names follow the format `recognize_anything/model_name`. Use the name you specified when creating the model — see [Creating a Custom Vision Model](https://docs.dragoneye.ai/vision-models/create-a-custom-vision-model) for more details.
 
+### Example Image Response
+
+Below is an example of what a `ClassificationPredictImageResponse` looks like for a Building Detection model. An image response is **object-forward** and **timestamp-free**: you get a flat list of detected objects, and each object carries a single bounding box and its categories. Each category lists its attributes, and each attribute is the chosen option with a single `score`.
+
+```typescript
+{
+  prediction_task_uuid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  original_file_name: "any-file-name",
+  objects: [
+    {
+      // Stable id for this detected object within the response.
+      object_id: 1,
+      // The object's single bounding box, normalized to 0..1.
+      bbox_observation: { normalized_bbox: [0.12, 0.25, 0.55, 0.78], bbox_score: 0.94 },
+      categories: [
+        {
+          category_id: 2084323334,
+          name: "House (detached)",
+          score: 0.92,
+          // Each attribute prediction is a chosen option with a single score.
+          attributes: [
+            {
+              attribute_id: 1371766615,
+              attribute_name: "Building Exterior Color",
+              option_id: 3498033303,
+              option_name: "White / Off-white",
+              score: 0.85,
+            },
+            {
+              attribute_id: 448392115,
+              attribute_name: "Building Exterior Material",
+              option_id: 3887467550,
+              option_name: "Wood (incl. timber siding)",
+              score: 0.78,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+```
+
+Each entry in `objects` is one detected object. `bbox_observation` holds its location, `categories` holds the predicted category with a confidence score, and each attribute is the chosen option with its score.
+
+---
+
 ### Example Video Response
 
-Below is an example of what a `ClassificationPredictVideoResponse` looks like for a Building Detection model. The response is **object-forward**: instead of a per-frame map, you get a flat list of tracked objects, and each object carries everything about its lifetime — every bounding-box observation over time, its categories, and each attribute's value over contiguous timestamp ranges. Images use the exact same shape, just with all timestamps equal to `0`.
+Below is an example of what a `ClassificationPredictVideoResponse` looks like for a Building Detection model. The response is **object-forward**: instead of a per-frame map, you get a flat list of tracked objects, and each object carries everything about its lifetime — every bounding-box observation over time, its categories, and each attribute's value over contiguous timestamp ranges. Unlike images, video responses keep the full time dimension.
 
 ```typescript
 {
@@ -176,23 +220,39 @@ Each entry in `objects` is one tracked entity. `bbox_observations` holds its loc
 
 ### Types
 
-The response types form a nested hierarchy. Both image and video responses are object-forward — a flat list of tracked `DetectedObject`s — and share the same nested shape:
+The response types form a nested hierarchy. Both image and video responses are object-forward — a flat list of detected/tracked objects — but image responses are **timestamp-free** while video responses keep the full time dimension. The two families are prefixed `Image*` and `Video*`.
+
+Image responses collapse the time dimension: one bounding box per object and one `score` per attribute.
 
 ```
-ClassificationPredictImageResponse / ClassificationPredictVideoResponse
-└── objects: DetectedObject[]
+ClassificationPredictImageResponse
+└── objects: ImageDetectedObject[]
+    ├── object_id: number
+    ├── bbox_observation: ImageBboxObservation
+    │   └── { normalized_bbox: [x_min, y_min, x_max, y_max], bbox_score }
+    └── categories: ImageCategoryPrediction[]
+        ├── { category_id, name, score }
+        └── attributes: ImageAttributePrediction[]
+            └── { attribute_id, attribute_name, option_id, option_name, score }
+```
+
+Video responses carry every observation over time, plus `frames_per_second`.
+
+```
+ClassificationPredictVideoResponse
+└── objects: VideoDetectedObject[]
     ├── object_id: number
     ├── timestamp_ranges: TimestampRange[] { timestamp_start_us_inclusive, timestamp_end_us_inclusive }
-    ├── bbox_observations: BboxObservation[]
+    ├── bbox_observations: VideoBboxObservation[]
     │   └── { timestamp_microseconds, normalized_bbox: [x_min, y_min, x_max, y_max], bbox_score }
-    └── categories: CategoryPrediction[]
+    └── categories: VideoCategoryPrediction[]
         ├── { category_id, name, score }
-        └── attributes: AttributePrediction[]
+        └── attributes: VideoAttributePrediction[]
             └── { attribute_id, attribute_name, option_id, option_name,
                   timestamp_ranges: ScoredTimestampRange[] { timestamp_start_us_inclusive, timestamp_end_us_inclusive, score } }
 ```
 
-The only difference between the two responses is that `ClassificationPredictVideoResponse` additionally carries `frames_per_second`. For images, all timestamps (`timestamp_microseconds` and both `timestamp_ranges` bounds) are `0`.
+> **Note — Breaking change (v5)**: The previous unprefixed `DetectedObject`, `BboxObservation`, `CategoryPrediction`, and `AttributePrediction` types were removed. Image consumers now read `obj.bbox_observation.normalized_bbox` (was `obj.bbox_observations[0].normalized_bbox`) and `attr.score` (was `attr.timestamp_ranges[0].score`). The parquet/wire format is unchanged — this is purely a client-side type change.
 
 ---
 
@@ -220,9 +280,9 @@ Defines whether a prediction is for an `"image"` or a `"video"`.
 export type PredictionType = "image" | "video";
 ```
 
-#### **`TimestampRange`** / **`ScoredTimestampRange`**
+#### **`TimestampRange`** / **`ScoredTimestampRange`** *(video only)*
 
-A span of time given as **inclusive microsecond** bounds. `TimestampRange` describes one contiguous interval an object was present; `ScoredTimestampRange` adds a `score` — the mean confidence the winning option held over that interval. Both are used as arrays (`timestamp_ranges`). For images, both bounds are `0`.
+A span of time given as **inclusive microsecond** bounds. `TimestampRange` describes one contiguous interval an object was present; `ScoredTimestampRange` adds a `score` — the mean confidence the winning option held over that interval. Both are used as arrays (`timestamp_ranges`) on video responses.
 
 ```typescript
 export interface TimestampRange {
@@ -237,24 +297,78 @@ export interface ScoredTimestampRange {
 }
 ```
 
-#### **`BboxObservation`**
+### Image types
 
-A single bounding-box observation of an object at one timestamp. `normalized_bbox` is `[x_min, y_min, x_max, y_max]` in `0..1`. For images, `timestamp_microseconds` is `0`.
+#### **`ImageBboxObservation`**
+
+The bounding box of a detected object in an image. `normalized_bbox` is `[x_min, y_min, x_max, y_max]` in `0..1`.
 
 ```typescript
-export interface BboxObservation {
+export interface ImageBboxObservation {
+  normalized_bbox: NormalizedBbox;
+  bbox_score: number;
+}
+```
+
+#### **`ImageAttributePrediction`**
+
+A predicted attribute as a chosen option for an object in an image, with its `score`.
+
+```typescript
+export interface ImageAttributePrediction {
+  attribute_id: number;
+  attribute_name: string;
+  option_id: number;
+  option_name: string;
+  score: number;
+}
+```
+
+#### **`ImageCategoryPrediction`**
+
+A predicted category for an object in an image, with its associated attribute predictions.
+
+```typescript
+export interface ImageCategoryPrediction {
+  category_id: number;
+  name: string;
+  score: number;
+  attributes: ImageAttributePrediction[];
+}
+```
+
+#### **`ImageDetectedObject`**
+
+A single detected object in an image. `object_id` is stable within the response; `bbox_observation` is its single bounding box; `categories` holds its category predictions.
+
+```typescript
+export interface ImageDetectedObject {
+  object_id: number;
+  bbox_observation: ImageBboxObservation;
+  categories: ImageCategoryPrediction[];
+}
+```
+
+### Video types
+
+#### **`VideoBboxObservation`**
+
+A single bounding-box observation of a tracked object at one timestamp. `normalized_bbox` is `[x_min, y_min, x_max, y_max]` in `0..1`.
+
+```typescript
+export interface VideoBboxObservation {
   timestamp_microseconds: number;
   normalized_bbox: NormalizedBbox;
   bbox_score: number;
 }
 ```
 
-#### **`AttributePrediction`**
+#### **`VideoAttributePrediction`**
 
 A predicted attribute as a chosen option, with the scored timestamp ranges over which that option held. The same `attribute_id` may appear multiple times across an object's life if its value changed.
 
 ```typescript
-export interface AttributePrediction {
+export interface VideoAttributePrediction {
   attribute_id: number;
   attribute_name: string;
   option_id: number;
@@ -263,29 +377,29 @@ export interface AttributePrediction {
 }
 ```
 
-#### **`CategoryPrediction`**
+#### **`VideoCategoryPrediction`**
 
-A predicted category for an object, with its associated attribute predictions.
+A predicted category for a tracked object, with its associated attribute predictions.
 
 ```typescript
-export interface CategoryPrediction {
+export interface VideoCategoryPrediction {
   category_id: number;
   name: string;
   score: number;
-  attributes: AttributePrediction[];
+  attributes: VideoAttributePrediction[];
 }
 ```
 
-#### **`DetectedObject`**
+#### **`VideoDetectedObject`**
 
 A single tracked entity. `object_id` is stable within the response; `timestamp_ranges` are the object's presence ranges over time (one per contiguous on-screen interval); `bbox_observations` holds its location over time; `categories` holds its category predictions.
 
 ```typescript
-export interface DetectedObject {
+export interface VideoDetectedObject {
   object_id: number;
   timestamp_ranges: TimestampRange[];
-  bbox_observations: BboxObservation[];
-  categories: CategoryPrediction[];
+  bbox_observations: VideoBboxObservation[];
+  categories: VideoCategoryPrediction[];
 }
 ```
 
@@ -295,7 +409,7 @@ Response structure for image predictions.
 
 ```typescript
 export interface ClassificationPredictImageResponse {
-  objects: DetectedObject[];
+  objects: ImageDetectedObject[];
   prediction_task_uuid: PredictionTaskUUID;
   original_file_name?: string | null;
 }
@@ -303,11 +417,11 @@ export interface ClassificationPredictImageResponse {
 
 #### **`ClassificationPredictVideoResponse`**
 
-Response structure for video predictions. Identical to the image response, plus `frames_per_second`.
+Response structure for video predictions. Like the image response, plus `frames_per_second`, and with the time-aware `VideoDetectedObject` shape.
 
 ```typescript
 export interface ClassificationPredictVideoResponse {
-  objects: DetectedObject[];
+  objects: VideoDetectedObject[];
   frames_per_second: number;
   prediction_task_uuid: PredictionTaskUUID;
   original_file_name?: string | null;

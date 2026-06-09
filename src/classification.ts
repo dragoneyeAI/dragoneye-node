@@ -22,7 +22,10 @@ import type {
   ClassificationPredictVideoResponse,
   PredictionTaskStatusResponse,
 } from "./models.js";
-import { deserializeDetectedObjects } from "./parquetDeserializer.js";
+import {
+  deserializeObjectForwardImagePredictions,
+  deserializeObjectForwardVideoPredictions,
+} from "./parquetDeserializer.js";
 
 // ---- Internal API shapes ----
 interface PresignedPostRequest {
@@ -417,13 +420,14 @@ export class Classification {
     const parquetBytes = await resp.arrayBuffer();
     const originalFileName = resp.headers.get("X-Original-File-Name") ?? null;
 
-    // Images and video share the same object-forward parquet format, so a
-    // single deserializer produces the objects for both; only the surrounding
-    // response shape (and the frames_per_second header) differ.
-    const objects = await deserializeDetectedObjects(parquetBytes);
-
+    // Images and video share the same object-forward parquet wire format, but
+    // are deserialized into different shapes: image collapses the time
+    // dimension (one bbox, one score per attribute), video keeps it.
     switch (predictionType) {
       case "image": {
+        const objects = await deserializeObjectForwardImagePredictions(
+          parquetBytes
+        );
         return {
           objects,
           prediction_task_uuid: predictionTaskUuid,
@@ -437,6 +441,9 @@ export class Classification {
             "Missing X-Frames-Per-Second header on video prediction response"
           );
         }
+        const objects = await deserializeObjectForwardVideoPredictions(
+          parquetBytes
+        );
         return {
           objects,
           frames_per_second: Number(framesPerSecondHeader),
