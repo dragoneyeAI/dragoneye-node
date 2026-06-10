@@ -24,6 +24,15 @@ async function main() {
 
   console.log("\n--- Parsed predictions ---\n");
   console.log(`Frames per second: ${result.frames_per_second}`);
+  const frameTimestamps = result.frame_timestamps_microseconds;
+  console.log(
+    `Processed frames: ${frameTimestamps.length}` +
+      (frameTimestamps.length > 0
+        ? ` (first=${frameTimestamps[0]}us, last=${
+            frameTimestamps[frameTimestamps.length - 1]
+          }us)`
+        : "")
+  );
   for (const obj of result.objects) {
     const presence = obj.timestamp_ranges
       .map(

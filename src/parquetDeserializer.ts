@@ -8,6 +8,7 @@
 // and no eval, so this decode path runs in Workers and other no-codegen runtimes.
 import { parquetReadObjects } from "hyparquet";
 import { decompress as zstdDecompress } from "fzstd";
+import { unzipSync } from "fflate";
 import type {
   BboxObservation,
   ImageAttributePrediction,
@@ -29,6 +30,18 @@ const compressors = {
   ZSTD: (input: Uint8Array, outputLength: number): Uint8Array =>
     zstdDecompress(input, new Uint8Array(outputLength)),
 };
+
+// The results body is a STORED (uncompressed-at-the-zip-level) ZIP archive
+// holding `predictions.parquet` and, for video, `frame_timestamps.parquet`.
+// We unzip to get each member's raw parquet bytes; the parquet's own zstd
+// compression is untouched and still decoded by `compressors` above. fflate's
+// unzipSync is pure JS (no WASM/eval), matching this module's Workers-safe
+// constraint. Returns a map of member name -> raw parquet bytes.
+export function splitPredictionArchive(
+  body: Uint8Array
+): Record<string, Uint8Array> {
+  return unzipSync(body);
+}
 
 // hyparquet decodes parquet INT64 columns as bigint, so every id/microsecond
 // field arrives as `number | bigint` and must be narrowed before leaving this
@@ -222,4 +235,20 @@ export async function deserializeObjectForwardImagePredictions(
 ): Promise<ImageDetectedObject[]> {
   const rows = await readObjectForwardRows(parquetBytes);
   return rows.map(rowToImageDetectedObject);
+}
+
+// Reads `frame_timestamps.parquet` (one row per processed frame, including
+// zero-detection frames) and returns just the timestamps, ascending. We drop
+// `image_id` deliberately — no new model. timestamp_microseconds is an INT64,
+// so hyparquet hands it back as bigint; `toNumber` coerces it. The explicit
+// numeric comparator is required: `.sort()` defaults to lexicographic order,
+// which would mis-order microsecond values (e.g. "1000000" < "2000000" only by
+// luck of digit count).
+export async function deserializeVideoFrameTimestamps(
+  parquetBytes: ArrayBuffer
+): Promise<number[]> {
+  const rows = await readObjectForwardRows(parquetBytes);
+  return rows
+    .map((row) => toNumber(row["timestamp_microseconds"]))
+    .sort((a, b) => a - b);
 }

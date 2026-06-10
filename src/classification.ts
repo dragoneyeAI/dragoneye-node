@@ -25,6 +25,8 @@ import type {
 import {
   deserializeObjectForwardImagePredictions,
   deserializeObjectForwardVideoPredictions,
+  deserializeVideoFrameTimestamps,
+  splitPredictionArchive,
 } from "./parquetDeserializer.js";
 
 // ---- Internal API shapes ----
@@ -47,6 +49,15 @@ interface PredictionTaskBeginResponse {
 // ---- Internal helpers ----
 function isTaskSuccessful(status: PredictionTaskState): boolean {
   return status === PREDICTED_STATUS;
+}
+
+// A Uint8Array from the unzipped archive may be a view into a larger buffer, so
+// slice by its offset/length to hand the parquet reader exactly its own bytes.
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength
+  ) as ArrayBuffer;
 }
 
 function isTaskFailed(status: PredictionTaskState): boolean {
@@ -417,7 +428,19 @@ export class Classification {
       );
     }
 
-    const parquetBytes = await resp.arrayBuffer();
+    // The body is a STORED ZIP archive holding `predictions.parquet` (the
+    // object-forward predictions; required) and, for video, an optional
+    // `frame_timestamps.parquet`. Unzip to raw parquet bytes per member.
+    const archive = splitPredictionArchive(
+      new Uint8Array(await resp.arrayBuffer())
+    );
+    const predictionsMember = archive["predictions.parquet"];
+    if (predictionsMember === undefined) {
+      throw new PredictionTaskResultsUnavailableError(
+        "Prediction results archive is missing predictions.parquet"
+      );
+    }
+    const parquetBytes = toArrayBuffer(predictionsMember);
     const originalFileName = resp.headers.get("X-Original-File-Name") ?? null;
 
     // Images and video share the same object-forward parquet wire format, but
@@ -425,6 +448,7 @@ export class Classification {
     // dimension (one bbox, one score per attribute), video keeps it.
     switch (predictionType) {
       case "image": {
+        // Images ignore frame_timestamps.parquet even if present.
         const objects = await deserializeObjectForwardImagePredictions(
           parquetBytes
         );
@@ -444,9 +468,18 @@ export class Classification {
         const objects = await deserializeObjectForwardVideoPredictions(
           parquetBytes
         );
+        // frame_timestamps.parquet is optional — degrade to [] if absent.
+        const frameTimestampsMember = archive["frame_timestamps.parquet"];
+        const frameTimestampsMicroseconds =
+          frameTimestampsMember === undefined
+            ? []
+            : await deserializeVideoFrameTimestamps(
+                toArrayBuffer(frameTimestampsMember)
+              );
         return {
           objects,
           frames_per_second: Number(framesPerSecondHeader),
+          frame_timestamps_microseconds: frameTimestampsMicroseconds,
           prediction_task_uuid: predictionTaskUuid,
           original_file_name: originalFileName,
         } satisfies ClassificationPredictVideoResponse;
