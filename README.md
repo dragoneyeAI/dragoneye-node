@@ -144,10 +144,13 @@ Below is an example of what a `ClassificationPredictVideoResponse` looks like fo
       timestamp_ranges: [
         { timestamp_start_us_inclusive: 0, timestamp_end_us_inclusive: 1000000 },
       ],
-      // One observation per sampled frame the object appeared in.
+      // One observation per processed frame in the object's lifespan. Detected
+      // frames carry a real bbox under `observation`; gap frames (predicted
+      // present but not detected on that frame) carry `observation: null`.
       bbox_observations: [
-        { timestamp_microseconds: 0, normalized_bbox: [0.12, 0.25, 0.55, 0.78], bbox_score: 0.94 },
-        { timestamp_microseconds: 1000000, normalized_bbox: [0.13, 0.26, 0.56, 0.79], bbox_score: 0.91 },
+        { timestamp_microseconds: 0, observation: { normalized_bbox: [0.12, 0.25, 0.55, 0.78], bbox_score: 0.94 } },
+        { timestamp_microseconds: 500000, observation: null },
+        { timestamp_microseconds: 1000000, observation: { normalized_bbox: [0.13, 0.26, 0.56, 0.79], bbox_score: 0.91 } },
       ],
       categories: [
         {
@@ -195,7 +198,7 @@ Below is an example of what a `ClassificationPredictVideoResponse` looks like fo
         { timestamp_start_us_inclusive: 0, timestamp_end_us_inclusive: 0 },
       ],
       bbox_observations: [
-        { timestamp_microseconds: 0, normalized_bbox: [0.60, 0.30, 0.88, 0.75], bbox_score: 0.87 },
+        { timestamp_microseconds: 0, observation: { normalized_bbox: [0.60, 0.30, 0.88, 0.75], bbox_score: 0.87 } },
       ],
       categories: [
         {
@@ -228,7 +231,7 @@ Image responses collapse the time dimension: one bounding box per object and one
 ClassificationPredictImageResponse
 └── objects: ImageDetectedObject[]
     ├── object_id: number
-    ├── bbox_observation: ImageBboxObservation
+    ├── bbox_observation: BboxObservation
     │   └── { normalized_bbox: [x_min, y_min, x_max, y_max], bbox_score }
     └── categories: ImageCategoryPrediction[]
         ├── { category_id, name, score }
@@ -244,15 +247,14 @@ ClassificationPredictVideoResponse
     ├── object_id: number
     ├── timestamp_ranges: TimestampRange[] { timestamp_start_us_inclusive, timestamp_end_us_inclusive }
     ├── bbox_observations: VideoBboxObservation[]
-    │   └── { timestamp_microseconds, normalized_bbox: [x_min, y_min, x_max, y_max], bbox_score }
+    │   └── { timestamp_microseconds, observation: BboxObservation | null }
+    │       observation: { normalized_bbox: [x_min, y_min, x_max, y_max], bbox_score } | null (gap frame)
     └── categories: VideoCategoryPrediction[]
         ├── { category_id, name, score }
         └── attributes: VideoAttributePrediction[]
             └── { attribute_id, attribute_name, option_id, option_name,
                   timestamp_ranges: ScoredTimestampRange[] { timestamp_start_us_inclusive, timestamp_end_us_inclusive, score } }
 ```
-
-> **Note — Breaking change (v5)**: The previous unprefixed `DetectedObject`, `BboxObservation`, `CategoryPrediction`, and `AttributePrediction` types were removed. Image consumers now read `obj.bbox_observation.normalized_bbox` (was `obj.bbox_observations[0].normalized_bbox`) and `attr.score` (was `attr.timestamp_ranges[0].score`). The parquet/wire format is unchanged — this is purely a client-side type change.
 
 ---
 
@@ -297,18 +299,18 @@ export interface ScoredTimestampRange {
 }
 ```
 
-### Image types
+#### **`BboxObservation`**
 
-#### **`ImageBboxObservation`**
-
-The bounding box of a detected object in an image. `normalized_bbox` is `[x_min, y_min, x_max, y_max]` in `0..1`.
+A single bounding-box detection: the box and its score, always present together. `normalized_bbox` is `[x_min, y_min, x_max, y_max]` in `0..1`. Both fields are **required** — a `BboxObservation` always represents a real detection. The absence of a detection (a video gap frame) is modeled one level up by [`VideoBboxObservation`](#videobboxobservation) making its `observation` field nullable. Images use `BboxObservation` directly; they never have gap frames.
 
 ```typescript
-export interface ImageBboxObservation {
+export interface BboxObservation {
   normalized_bbox: NormalizedBbox;
   bbox_score: number;
 }
 ```
+
+### Image types
 
 #### **`ImageAttributePrediction`**
 
@@ -344,7 +346,7 @@ A single detected object in an image. `object_id` is stable within the response;
 ```typescript
 export interface ImageDetectedObject {
   object_id: number;
-  bbox_observation: ImageBboxObservation;
+  bbox_observation: BboxObservation;
   categories: ImageCategoryPrediction[];
 }
 ```
@@ -353,13 +355,14 @@ export interface ImageDetectedObject {
 
 #### **`VideoBboxObservation`**
 
-A single bounding-box observation of a tracked object at one timestamp. `normalized_bbox` is `[x_min, y_min, x_max, y_max]` in `0..1`.
+A single bounding-box observation of a tracked object at one timestamp. `timestamp_microseconds` is always present; `observation` is a [`BboxObservation`](#bboxobservation) or `null`.
+
+A video object accumulates one observation per processed frame within its lifespan. Frames where the track was **detected** carry a real bbox under `observation`; **gap frames** — frames inside the lifespan where the track was predicted present but not detected — carry `observation: null`. These observations are kept (not filtered out) so present-but-undetected frames stay visible.
 
 ```typescript
 export interface VideoBboxObservation {
   timestamp_microseconds: number;
-  normalized_bbox: NormalizedBbox;
-  bbox_score: number;
+  observation: BboxObservation | null;
 }
 ```
 

@@ -9,8 +9,8 @@
 import { parquetReadObjects } from "hyparquet";
 import { decompress as zstdDecompress } from "fzstd";
 import type {
+  BboxObservation,
   ImageAttributePrediction,
-  ImageBboxObservation,
   ImageCategoryPrediction,
   ImageDetectedObject,
   ScoredTimestampRange,
@@ -62,16 +62,29 @@ function parseScoredTimestampRange(value: unknown): ScoredTimestampRange {
   };
 }
 
+// Builds a real detection from a struct that is known to carry one — both the
+// box and its score are present. The gap-frame branch lives at the caller, so
+// this helper never sees nulls. Floats read straight from the parquet list — no
+// per-element coercion.
+function toBboxObservation(value: Record<string, unknown>): BboxObservation {
+  return {
+    normalized_bbox: value["normalized_bbox"] as NormalizedBbox,
+    bbox_score: value["bbox_score"] as number,
+  };
+}
+
 // ---- Video: straight structural map ----
 
 function parseVideoBboxObservation(
   value: Record<string, unknown>
 ): VideoBboxObservation {
+  // Gap frames (predicted-but-undetected frames inside a track's lifespan) emit
+  // null for the bbox on the wire; hyparquet surfaces null cells as `undefined`.
+  // The timestamp is always present; only the observation goes null.
+  const normalizedBbox = value["normalized_bbox"];
   return {
     timestamp_microseconds: toNumber(value["timestamp_microseconds"]),
-    // Floats read straight from the parquet list — no per-element coercion.
-    normalized_bbox: value["normalized_bbox"] as NormalizedBbox,
-    bbox_score: value["bbox_score"] as number,
+    observation: normalizedBbox == null ? null : toBboxObservation(value),
   };
 }
 
@@ -122,14 +135,6 @@ function rowToVideoDetectedObject(
 
 // ---- Image: collapse the time dimension ----
 
-function toImageBbox(value: Record<string, unknown>): ImageBboxObservation {
-  return {
-    // Drop timestamp_microseconds — images are timestamp-free.
-    normalized_bbox: value["normalized_bbox"] as NormalizedBbox,
-    bbox_score: value["bbox_score"] as number,
-  };
-}
-
 function parseImageAttributePrediction(
   value: Record<string, unknown>
 ): ImageAttributePrediction {
@@ -170,10 +175,12 @@ function rowToImageDetectedObject(
     [];
   const categories =
     (row["categories"] as Record<string, unknown>[] | null | undefined) ?? [];
-  // Images always have exactly one bbox observation; take the first.
+  // Images always have exactly one bbox observation and are never gap frames;
+  // take the first and build a real detection. A null bbox here would surface
+  // as a malformed value rather than being silently masked — intentional.
   return {
     object_id: toNumber(row["object_id"]),
-    bbox_observation: toImageBbox(bboxObservations[0] ?? {}),
+    bbox_observation: toBboxObservation(bboxObservations[0] ?? {}),
     categories: categories.map(parseImageCategoryPrediction),
   };
 }

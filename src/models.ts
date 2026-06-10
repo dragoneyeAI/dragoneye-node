@@ -35,11 +35,15 @@ export interface ScoredTimestampRange {
   score: number;
 }
 
-// ---- Shared bases ----
+// ---- Shared value objects ----
 
-// Fields shared by every bounding-box sighting, image or video.
-interface BboxObservationBase {
-  // normalized_bbox is [x1, y1, x2, y2] in 0..1.
+// A single bounding-box detection: the box and its score, always present
+// together. This is the "real detection" value object — both fields are
+// required, so a non-null BboxObservation guarantees both are set. Absence of a
+// detection (video gap frames) is modeled at the level above by making the
+// containing field nullable.
+export interface BboxObservation {
+  // [x1, y1, x2, y2] in 0..1.
   normalized_bbox: NormalizedBbox;
   bbox_score: number;
 }
@@ -61,9 +65,6 @@ interface CategoryPredictionBase {
 
 // ---- Image (timestamp-free) ----
 
-// The bounding box of a detected object in an image.
-export interface ImageBboxObservation extends BboxObservationBase {}
-
 // A chosen attribute option for an object in an image, with its score.
 export interface ImageAttributePrediction extends AttributePredictionBase {
   score: number;
@@ -75,18 +76,24 @@ export interface ImageCategoryPrediction extends CategoryPredictionBase {
 
 // One detected object in an image: its bounding box and categories. Unlike
 // VideoDetectedObject, an image object has no time dimension — a single
-// ImageBboxObservation and a single score per attribute.
+// BboxObservation and a single score per attribute. Images never have gap
+// frames, so the bbox is always present.
 export interface ImageDetectedObject {
   object_id: number;
-  bbox_observation: ImageBboxObservation;
+  bbox_observation: BboxObservation;
   categories: ImageCategoryPrediction[];
 }
 
 // ---- Video (time-aware) ----
 
-// One bounding-box sighting of a tracked object at a single timestamp.
-export interface VideoBboxObservation extends BboxObservationBase {
+// One bounding-box sighting of a tracked object at a single timestamp. The
+// timestamp is always present, but `observation` is null on "predicted-but-
+// undetected" gap frames — frames inside a track's lifespan where the track
+// wasn't detected. Only video produces gap frames; image objects always carry a
+// real bbox.
+export interface VideoBboxObservation {
   timestamp_microseconds: number;
+  observation: BboxObservation | null;
 }
 
 // A chosen attribute option together with the time runs over which it won. The
