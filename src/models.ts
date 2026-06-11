@@ -131,6 +131,12 @@ export interface ClassificationPredictImageResponse {
 export interface ClassificationPredictVideoResponse {
   objects: VideoDetectedObject[];
   frames_per_second: number;
+  // The authoritative, sorted (ascending) list of every processed frame's
+  // timestamp in microseconds — including frames with zero detections. Broader
+  // than the per-object bbox/timestamp spans, which only cover an object's
+  // lifespan. Use it to snap an arbitrary playhead time to the nearest real
+  // frame, then look up detections at that timestamp.
+  frame_timestamps_microseconds: number[];
   prediction_task_uuid: PredictionTaskUUID;
   original_file_name?: string | null;
 }
