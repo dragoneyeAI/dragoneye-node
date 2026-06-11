@@ -33,8 +33,14 @@ async function main() {
       .join(", ");
     console.log(`\nObject ${obj.object_id} (us ${presence}):`);
     for (const bbox of obj.bbox_observations) {
+      // Gap frames (the track was predicted present but not detected on this
+      // frame) carry a null observation.
+      if (bbox.observation === null) {
+        console.log(`  ts=${bbox.timestamp_microseconds}us Bbox: (gap frame, not detected)`);
+        continue;
+      }
       console.log(
-        `  ts=${bbox.timestamp_microseconds}us Bbox: ${JSON.stringify(bbox.normalized_bbox)} (score: ${bbox.bbox_score})`
+        `  ts=${bbox.timestamp_microseconds}us Bbox: ${JSON.stringify(bbox.observation.normalized_bbox)} (score: ${bbox.observation.bbox_score})`
       );
     }
     for (const category of obj.categories) {
