@@ -22,10 +22,7 @@ import type {
   ClassificationPredictVideoResponse,
   PredictionTaskStatusResponse,
 } from "./models.js";
-import {
-  deserializeImagePredictions,
-  deserializeVideoPredictions,
-} from "./parquetDeserializer.js";
+import { deserializeDetectedObjects } from "./parquetDeserializer.js";
 
 // ---- Internal API shapes ----
 interface PresignedPostRequest {
@@ -236,7 +233,7 @@ export class Classification {
 
     const form = new FormData();
     form.append("mimetype", mimeType);
-    form.append("response_version", "parquet");
+    form.append("response_version", "parquet_object");
     if (name) {
       form.append("file_name", name);
     }
@@ -389,7 +386,7 @@ export class Classification {
       `${BASE_API_URL}/prediction-task/results` +
       `?predictionTaskUuid=${encodeURIComponent(
         predictionTaskUuid as unknown as string
-      )}&response_version=parquet`;
+      )}&response_version=parquet_object`;
 
     let resp: Response;
     try {
@@ -420,11 +417,15 @@ export class Classification {
     const parquetBytes = await resp.arrayBuffer();
     const originalFileName = resp.headers.get("X-Original-File-Name") ?? null;
 
+    // Images and video share the same object-forward parquet format, so a
+    // single deserializer produces the objects for both; only the surrounding
+    // response shape (and the frames_per_second header) differ.
+    const objects = await deserializeDetectedObjects(parquetBytes);
+
     switch (predictionType) {
       case "image": {
-        const object_predictions = await deserializeImagePredictions(parquetBytes);
         return {
-          object_predictions,
+          objects,
           prediction_task_uuid: predictionTaskUuid,
           original_file_name: originalFileName,
         } satisfies ClassificationPredictImageResponse;
@@ -436,11 +437,8 @@ export class Classification {
             "Missing X-Frames-Per-Second header on video prediction response"
           );
         }
-        const timestamp_us_to_predictions = await deserializeVideoPredictions(
-          parquetBytes
-        );
         return {
-          timestamp_us_to_predictions,
+          objects,
           frames_per_second: Number(framesPerSecondHeader),
           prediction_task_uuid: predictionTaskUuid,
           original_file_name: originalFileName,
