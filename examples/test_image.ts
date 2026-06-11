@@ -18,15 +18,18 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 
   console.log("\n--- Parsed predictions ---\n");
-  for (const obj of result.object_predictions) {
-    console.log("Bbox:", obj.normalizedBbox);
-    for (const pred of obj.predictions) {
-      console.log(`  Category: ${pred.category.name} (score: ${pred.category.score})`);
-      for (const attr of pred.attributes) {
-        console.log(`    Attribute: ${attr.name}`);
-        for (const opt of attr.options) {
-          console.log(`      ${opt.name}: ${opt.score}`);
-        }
+  for (const obj of result.objects) {
+    console.log(`Object ${obj.object_id}:`);
+    for (const bbox of obj.bbox_observations) {
+      console.log(`  Bbox: ${JSON.stringify(bbox.normalized_bbox)} (score: ${bbox.bbox_score})`);
+    }
+    for (const category of obj.categories) {
+      console.log(`  Category: ${category.name} (score: ${category.score})`);
+      for (const attr of category.attributes) {
+        const score = attr.timestamp_ranges[0]?.score;
+        console.log(
+          `    Attribute: ${attr.attribute_name} = ${attr.option_name} (score: ${score})`
+        );
       }
     }
     console.log();

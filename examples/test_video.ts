@@ -24,21 +24,28 @@ async function main() {
 
   console.log("\n--- Parsed predictions ---\n");
   console.log(`Frames per second: ${result.frames_per_second}`);
-  for (const [timestampUs, objectPredictions] of Object.entries(
-    result.timestamp_us_to_predictions
-  )) {
-    console.log(`\nTimestamp (us): ${timestampUs}`);
-    for (const obj of objectPredictions) {
-      console.log("  Bbox:", obj.normalizedBbox);
-      for (const pred of obj.predictions) {
-        console.log(
-          `    Category: ${pred.category.name} (score: ${pred.category.score})`
-        );
-        for (const attr of pred.attributes) {
-          console.log(`      Attribute: ${attr.name}`);
-          for (const opt of attr.options) {
-            console.log(`        ${opt.name}: ${opt.score}`);
-          }
+  for (const obj of result.objects) {
+    const presence = obj.timestamp_ranges
+      .map(
+        (tr) =>
+          `${tr.timestamp_start_us_inclusive}–${tr.timestamp_end_us_inclusive}`
+      )
+      .join(", ");
+    console.log(`\nObject ${obj.object_id} (us ${presence}):`);
+    for (const bbox of obj.bbox_observations) {
+      console.log(
+        `  ts=${bbox.timestamp_microseconds}us Bbox: ${JSON.stringify(bbox.normalized_bbox)} (score: ${bbox.bbox_score})`
+      );
+    }
+    for (const category of obj.categories) {
+      console.log(
+        `  Category: ${category.name} (score: ${category.score})`
+      );
+      for (const attr of category.attributes) {
+        for (const range of attr.timestamp_ranges) {
+          console.log(
+            `    Attribute: ${attr.attribute_name} = ${attr.option_name} (score: ${range.score}, us ${range.timestamp_start_us_inclusive}–${range.timestamp_end_us_inclusive})`
+          );
         }
       }
     }
