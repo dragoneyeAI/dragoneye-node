@@ -9,12 +9,16 @@
 import { parquetReadObjects } from "hyparquet";
 import { decompress as zstdDecompress } from "fzstd";
 import type {
-  AttributePrediction,
-  BboxObservation,
-  CategoryPrediction,
-  DetectedObject,
+  ImageAttributePrediction,
+  ImageBboxObservation,
+  ImageCategoryPrediction,
+  ImageDetectedObject,
   ScoredTimestampRange,
   TimestampRange,
+  VideoAttributePrediction,
+  VideoBboxObservation,
+  VideoCategoryPrediction,
+  VideoDetectedObject,
 } from "./models.js";
 import type { NormalizedBbox } from "./common.js";
 
@@ -35,10 +39,11 @@ function toNumber(value: unknown): number {
 }
 
 // The parquet schema is already nested (one row per tracked object, with
-// nested structs + repeated fields), so the deserializer is a straight
-// structural map from parquet row → typed object: no flattening or grouping.
-// Optional/repeated fields default to empty arrays via `?? []` so a missing
-// list never throws. hyparquet returns `undefined` for null cells.
+// nested structs + repeated fields) and identical for images and video. Video
+// is a straight structural map; image collapses the time dimension (one bbox,
+// one score per attribute). Optional/repeated fields default to empty arrays
+// via `?? []` so a missing list never throws. hyparquet returns `undefined`
+// for null cells.
 
 function parseTimestampRange(value: unknown): TimestampRange {
   const tr = (value ?? {}) as Record<string, unknown>;
@@ -57,7 +62,11 @@ function parseScoredTimestampRange(value: unknown): ScoredTimestampRange {
   };
 }
 
-function parseBboxObservation(value: Record<string, unknown>): BboxObservation {
+// ---- Video: straight structural map ----
+
+function parseVideoBboxObservation(
+  value: Record<string, unknown>
+): VideoBboxObservation {
   return {
     timestamp_microseconds: toNumber(value["timestamp_microseconds"]),
     // Floats read straight from the parquet list — no per-element coercion.
@@ -66,9 +75,9 @@ function parseBboxObservation(value: Record<string, unknown>): BboxObservation {
   };
 }
 
-function parseAttributePrediction(
+function parseVideoAttributePrediction(
   value: Record<string, unknown>
-): AttributePrediction {
+): VideoAttributePrediction {
   const timestampRanges =
     (value["timestamp_ranges"] as unknown[] | null | undefined) ?? [];
   return {
@@ -80,20 +89,22 @@ function parseAttributePrediction(
   };
 }
 
-function parseCategoryPrediction(
+function parseVideoCategoryPrediction(
   value: Record<string, unknown>
-): CategoryPrediction {
+): VideoCategoryPrediction {
   const attributes =
     (value["attributes"] as Record<string, unknown>[] | null | undefined) ?? [];
   return {
     category_id: toNumber(value["category_id"]),
     name: value["name"] as string,
     score: value["score"] as number,
-    attributes: attributes.map(parseAttributePrediction),
+    attributes: attributes.map(parseVideoAttributePrediction),
   };
 }
 
-function rowToDetectedObject(row: Record<string, unknown>): DetectedObject {
+function rowToVideoDetectedObject(
+  row: Record<string, unknown>
+): VideoDetectedObject {
   const bboxObservations =
     (row["bbox_observations"] as Record<string, unknown>[] | null | undefined) ??
     [];
@@ -104,8 +115,66 @@ function rowToDetectedObject(row: Record<string, unknown>): DetectedObject {
   return {
     object_id: toNumber(row["object_id"]),
     timestamp_ranges: timestampRanges.map(parseTimestampRange),
-    bbox_observations: bboxObservations.map(parseBboxObservation),
-    categories: categories.map(parseCategoryPrediction),
+    bbox_observations: bboxObservations.map(parseVideoBboxObservation),
+    categories: categories.map(parseVideoCategoryPrediction),
+  };
+}
+
+// ---- Image: collapse the time dimension ----
+
+function toImageBbox(value: Record<string, unknown>): ImageBboxObservation {
+  return {
+    // Drop timestamp_microseconds — images are timestamp-free.
+    normalized_bbox: value["normalized_bbox"] as NormalizedBbox,
+    bbox_score: value["bbox_score"] as number,
+  };
+}
+
+function parseImageAttributePrediction(
+  value: Record<string, unknown>
+): ImageAttributePrediction {
+  const timestampRanges =
+    (value["timestamp_ranges"] as unknown[] | null | undefined) ?? [];
+  // Images have exactly one zero-width range; max is just defensive.
+  const score = timestampRanges.reduce<number>((max, range) => {
+    const s = parseScoredTimestampRange(range).score;
+    return s > max ? s : max;
+  }, 0.0);
+  return {
+    attribute_id: toNumber(value["attribute_id"]),
+    attribute_name: value["attribute_name"] as string,
+    option_id: toNumber(value["option_id"]),
+    option_name: value["option_name"] as string,
+    score,
+  };
+}
+
+function parseImageCategoryPrediction(
+  value: Record<string, unknown>
+): ImageCategoryPrediction {
+  const attributes =
+    (value["attributes"] as Record<string, unknown>[] | null | undefined) ?? [];
+  return {
+    category_id: toNumber(value["category_id"]),
+    name: value["name"] as string,
+    score: value["score"] as number,
+    attributes: attributes.map(parseImageAttributePrediction),
+  };
+}
+
+function rowToImageDetectedObject(
+  row: Record<string, unknown>
+): ImageDetectedObject {
+  const bboxObservations =
+    (row["bbox_observations"] as Record<string, unknown>[] | null | undefined) ??
+    [];
+  const categories =
+    (row["categories"] as Record<string, unknown>[] | null | undefined) ?? [];
+  // Images always have exactly one bbox observation; take the first.
+  return {
+    object_id: toNumber(row["object_id"]),
+    bbox_observation: toImageBbox(bboxObservations[0] ?? {}),
+    categories: categories.map(parseImageCategoryPrediction),
   };
 }
 
@@ -118,16 +187,32 @@ function toAsyncBuffer(buffer: ArrayBuffer) {
   };
 }
 
-// Reads the zstd-compressed, object-forward parquet body and maps each row to
-// one DetectedObject. The same format is used for both images and video; the
-// image vs. video distinction and scalar metadata (frames_per_second, etc.)
-// live in response headers, which the caller reads.
-export async function deserializeDetectedObjects(
+async function readObjectForwardRows(
   parquetBytes: ArrayBuffer
-): Promise<DetectedObject[]> {
+): Promise<Record<string, unknown>[]> {
   const rows = await parquetReadObjects({
     file: toAsyncBuffer(parquetBytes),
     compressors,
   });
-  return (rows as Record<string, unknown>[]).map(rowToDetectedObject);
+  return rows as Record<string, unknown>[];
+}
+
+// Reads the zstd-compressed, object-forward parquet body and maps each row to
+// one VideoDetectedObject (a straight structural map preserving the time
+// dimension).
+export async function deserializeObjectForwardVideoPredictions(
+  parquetBytes: ArrayBuffer
+): Promise<VideoDetectedObject[]> {
+  const rows = await readObjectForwardRows(parquetBytes);
+  return rows.map(rowToVideoDetectedObject);
+}
+
+// Reads the same object-forward parquet body but collapses the time dimension
+// per row, yielding timestamp-free ImageDetectedObjects: one bbox per object
+// and one score per attribute.
+export async function deserializeObjectForwardImagePredictions(
+  parquetBytes: ArrayBuffer
+): Promise<ImageDetectedObject[]> {
+  const rows = await readObjectForwardRows(parquetBytes);
+  return rows.map(rowToImageDetectedObject);
 }
