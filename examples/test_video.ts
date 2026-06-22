@@ -6,18 +6,13 @@ import { Dragoneye } from "../src/index.js";
 
 const VIDEO_PATH = "/path/to/your/video.mp4";
 const MODEL_NAME = "recognize_anything/model_name";
-const FRAMES_PER_SECOND = 1;
 
 async function main() {
   const client = new Dragoneye({ apiKey: process.env.DRAGONEYE_API_KEY });
   const media = await Dragoneye.Video.fromFilePath(VIDEO_PATH);
 
   console.log("Starting prediction...");
-  const result = await client.classification.predictVideo(
-    media,
-    MODEL_NAME,
-    FRAMES_PER_SECOND
-  );
+  const result = await client.classification.predictVideo(media, MODEL_NAME);
 
   console.log("\nFull response:");
   console.log(JSON.stringify(result, null, 2));

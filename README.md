@@ -156,7 +156,7 @@ Below is an example of what a `ClassificationPredictVideoResponse` looks like fo
 {
   prediction_task_uuid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   original_file_name: "any-file-name",
-  frames_per_second: 1,
+  frames_per_second: 5,
   // Every processed frame's timestamp (microseconds), sorted ascending,
   // including frames with zero detections.
   frame_timestamps_microseconds: [0, 1000000, 2000000, 3000000],
@@ -284,7 +284,7 @@ Video responses carry every observation over time, plus `frames_per_second`.
 
 ```
 ClassificationPredictVideoResponse
-├── frames_per_second: number
+├── frames_per_second: number   // rate the video was sampled at, not its own frame rate
 ├── frame_timestamps_microseconds: number[]   // every processed frame, sorted ascending
 └── objects: VideoDetectedObject[]
     ├── object_id: number
@@ -474,6 +474,10 @@ Response structure for video predictions. Like the image response, plus `frames_
 ```typescript
 export interface ClassificationPredictVideoResponse {
   objects: VideoDetectedObject[];
+  // The rate your video was sampled at for prediction — NOT the video's own
+  // frame rate. Reflects the framesPerSecond you passed, or the server default
+  // if you didn't pass one. See
+  // https://docs.dragoneye.ai/docs/integrating/node-sdk#frame-rate for context.
   frames_per_second: number;
   frame_timestamps_microseconds: number[];
   prediction_task_uuid: PredictionTaskUUID;
@@ -525,7 +529,7 @@ Performs a classification prediction on a single image.
 await dragoneyeClient.classification.predictVideo(
   media: Video,
   modelName: string,
-  framesPerSecond: number = 1,
+  framesPerSecond?: number,
   timeoutSeconds?: number,
 ): Promise<ClassificationPredictVideoResponse>
 ```
@@ -536,7 +540,7 @@ Performs a classification prediction on a video.
 |-----------|------|---------|-------------|
 | `media` | `Video` | *required* | A `Video` object (from `fromFilePath`, `fromBlob`, `fromUrl`, etc.). |
 | `modelName` | `string` | *required* | The name of the model to use for prediction. |
-| `framesPerSecond` | `number` | `1` | How many frames per second to sample from the video. |
+| `framesPerSecond` | `number` | `undefined` | The rate at which we sample your video for prediction — **not** the video's own frame rate. For example, `2` evaluates two frames for every second of video, regardless of how many frames that second actually contains. Optional: leave it `undefined` to use the server default — see [Frame rate](https://docs.dragoneye.ai/docs/integrating/node-sdk#frame-rate) for context. |
 | `timeoutSeconds` | `number` | `undefined` | Maximum wait time in seconds. Throws `PredictionTaskError` on timeout. `undefined` polls indefinitely. |
 
 **Returns:** `Promise<ClassificationPredictVideoResponse>` — the tracked objects detected across the video.
