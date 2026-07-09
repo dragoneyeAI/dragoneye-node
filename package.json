@@ -1,6 +1,6 @@
 {
   "name": "dragoneye-node",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "description": "Official Node.js / TypeScript SDK for the Dragoneye computer vision API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
