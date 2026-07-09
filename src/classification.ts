@@ -94,7 +94,7 @@ export class Classification {
    *
    * @param framesPerSecond - How many frames per second to sample. Optional —
    *   when omitted, the server applies its default sampling rate. See
-   *   https://docs.dragoneye.ai/docs/integrating/node-sdk#frame-rate for context.
+   *   https://docs.dragoneye.ai/integrating/node-sdk#frame-rate for context.
    */
   async predictVideo(
     media: Video,
@@ -481,8 +481,8 @@ export class Classification {
           frameTimestampsMember === undefined
             ? []
             : await deserializeVideoFrameTimestamps(
-                toArrayBuffer(frameTimestampsMember)
-              );
+              toArrayBuffer(frameTimestampsMember)
+            );
         return {
           objects,
           frames_per_second: Number(framesPerSecondHeader),

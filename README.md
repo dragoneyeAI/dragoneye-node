@@ -477,7 +477,7 @@ export interface ClassificationPredictVideoResponse {
   // The rate your video was sampled at for prediction — NOT the video's own
   // frame rate. Reflects the framesPerSecond you passed, or the server default
   // if you didn't pass one. See
-  // https://docs.dragoneye.ai/docs/integrating/node-sdk#frame-rate for context.
+  // https://docs.dragoneye.ai/integrating/node-sdk#frame-rate for context.
   frames_per_second: number;
   frame_timestamps_microseconds: number[];
   prediction_task_uuid: PredictionTaskUUID;
@@ -540,7 +540,7 @@ Performs a classification prediction on a video.
 |-----------|------|---------|-------------|
 | `media` | `Video` | *required* | A `Video` object (from `fromFilePath`, `fromBlob`, `fromUrl`, etc.). |
 | `modelName` | `string` | *required* | The name of the model to use for prediction. |
-| `framesPerSecond` | `number` | `undefined` | The rate at which we sample your video for prediction — **not** the video's own frame rate. For example, `2` evaluates two frames for every second of video, regardless of how many frames that second actually contains. Optional: leave it `undefined` to use the server default — see [Frame rate](https://docs.dragoneye.ai/docs/integrating/node-sdk#frame-rate) for context. |
+| `framesPerSecond` | `number` | `undefined` | The rate at which we sample your video for prediction — **not** the video's own frame rate. For example, `2` evaluates two frames for every second of video, regardless of how many frames that second actually contains. Optional: leave it `undefined` to use the server default — see [Frame rate](https://docs.dragoneye.ai/integrating/node-sdk#frame-rate) for context. |
 | `timeoutSeconds` | `number` | `undefined` | Maximum wait time in seconds. Throws `PredictionTaskError` on timeout. `undefined` polls indefinitely. |
 
 **Returns:** `Promise<ClassificationPredictVideoResponse>` — the tracked objects detected across the video.
